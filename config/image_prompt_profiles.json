@@ -1,0 +1,119 @@
+{
+  "fallback_profile": "decision_checklist",
+  "global_quality_rules": {
+    "base_requirements": [
+      "小红书风格信息图（Infographic）",
+      "竖版（3:4）",
+      "卡通风格",
+      "手绘风格",
+      "必须使用手绘风格文字",
+      "背景色使用莫兰迪色系、奶油色、米白色、浅粉或薄荷绿等温柔色调",
+      "重点文字加粗放大，可用荧光笔划线效果强调关键词",
+      "卡片式信息排版",
+      "信息精简，多留白，一眼抓住重点",
+      "加入少量简洁的卡通元素、图标、便签纸质感或对话气泡",
+      "所有图像和文字均为手绘风格，无写实元素",
+      "右下角水印：“小美科普”"
+    ],
+    "negative_constraints": [
+      "不要过多小字",
+      "不要额外商业水印",
+      "不要夸张表情",
+      "不要复杂3D",
+      "不要英文乱码",
+      "不要平台水印（如小红书，小红书ID：xxx）"
+    ]
+  },
+  "profiles": [
+    {
+      "name": "business_infographic",
+      "match": {
+        "categories": ["投资"],
+        "angles": ["社会趋势"],
+        "keywords": ["市值", "趋势", "商业", "AI", "公司"]
+      },
+      "cover_template": "第{slide_index}张/共{total_slides}张，{slide_role}，小红书封面信息图，现代商业主题的卡通手绘风格，主标题“{recommended_title}”，副标题“{cover_text}”，核心信息“{image_suggestion}”，抽象城市天际线、全球地图线条、商业数据卡片与对话气泡布局，不出现真实公司logo",
+      "content_templates": [
+        "第{slide_index}张/共{total_slides}张，{slide_role}，商业信息图风格，主视觉围绕“{image_suggestion}”，用手绘数据卡片、箭头、图标和便签分条呈现，适合知识类用户收藏",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，数据卡片风格，主视觉围绕“{image_suggestion}”，强调结构清晰、重点分层与关键词高亮",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，趋势解读卡片风格，主视觉围绕“{image_suggestion}”，专业可信但不刻板"
+      ],
+      "closing_template": "第{slide_index}张/共{total_slides}张，{slide_role}，总结收尾信息图，围绕“{image_suggestion}”，用一句金句式总结、行动号召和醒目便签收尾，适合点赞收藏",
+      "default_image_suggestions": [
+        "封面图：全球市值前排公司背后的趋势钩子",
+        "内容图：市值前排公司的五大板块拆解",
+        "内容图：普通人看市值榜最该关注的三个问题",
+        "结尾图：不是荐股而是看趋势的风险提醒"
+      ],
+      "negative_constraints": [
+        "不要真实股票代码",
+        "不要收益率数字刺激"
+      ]
+    },
+    {
+      "name": "decision_checklist",
+      "match": {
+        "angles": ["避坑", "清单", "教程"],
+        "keywords": ["怎么选", "清单", "避坑", "入门"]
+      },
+      "cover_template": "第{slide_index}张/共{total_slides}张，{slide_role}，清单卡片封面图，标题“{recommended_title}”，副标题“{cover_text}”，核心信息“{image_suggestion}”，突出新手友好和一眼看懂",
+      "content_templates": [
+        "第{slide_index}张/共{total_slides}张，{slide_role}，清单卡片风格，围绕“{image_suggestion}”，重点明确，适合收藏",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，对比表格风格，围绕“{image_suggestion}”，帮助用户快速做选择",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，避坑提醒风格，围绕“{image_suggestion}”，结论直接"
+      ],
+      "closing_template": "第{slide_index}张/共{total_slides}张，{slide_role}，总结收尾卡片，围绕“{image_suggestion}”，给出一句结论和行动建议",
+      "default_image_suggestions": [
+        "封面图：这个主题最吸引人的钩子",
+        "内容图：选择前先看哪些关键维度",
+        "内容图：不同类型怎么选更适合新手",
+        "结尾图：最容易踩的坑和规避建议"
+      ]
+    },
+    {
+      "name": "lifestyle_flatlay",
+      "match": {
+        "categories": ["职场穿搭", "家居生活"],
+        "keywords": ["通勤", "家居", "生活"]
+      },
+      "cover_template": "第{slide_index}张/共{total_slides}张，{slide_role}，生活方式封面图，标题“{recommended_title}”，副标题“{cover_text}”，核心信息“{image_suggestion}”，自然光、干净桌面、平铺与卡通贴纸结合",
+      "content_templates": [
+        "第{slide_index}张/共{total_slides}张，{slide_role}，平铺展示风格，围绕“{image_suggestion}”，真实自然",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，场景化展示风格，围绕“{image_suggestion}”，强调实用感",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，收纳卡片风格，围绕“{image_suggestion}”，简洁耐看"
+      ],
+      "closing_template": "第{slide_index}张/共{total_slides}张，{slide_role}，总结收尾图，围绕“{image_suggestion}”，用手绘便签和小贴纸做温柔结尾",
+      "default_image_suggestions": [
+        "封面图：真实使用场景的吸睛开场",
+        "内容图：真实使用场景展示",
+        "内容图：搭配思路或空间整理重点",
+        "结尾图：适合谁与不适合谁"
+      ]
+    },
+    {
+      "name": "beauty_comparison",
+      "match": {
+        "categories": ["护肤"],
+        "angles": ["经验", "对比"],
+        "keywords": ["护肤", "敏感肌", "对比"]
+      },
+      "cover_template": "第{slide_index}张/共{total_slides}张，{slide_role}，护肤对比封面图，标题“{recommended_title}”，副标题“{cover_text}”，核心信息“{image_suggestion}”，专业但不过度营销",
+      "content_templates": [
+        "第{slide_index}张/共{total_slides}张，{slide_role}，对比卡片风格，围绕“{image_suggestion}”，强调成分和使用感差异",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，敏感肌避坑风格，围绕“{image_suggestion}”，语气克制",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，结论清单风格，围绕“{image_suggestion}”，不夸大功效"
+      ],
+      "closing_template": "第{slide_index}张/共{total_slides}张，{slide_role}，总结收尾图，围绕“{image_suggestion}”，用一句克制结论和行动建议收尾",
+      "default_image_suggestions": [
+        "封面图：最容易被忽略的护肤判断",
+        "内容图：适合与不适合的人群",
+        "内容图：常见误区和踩坑点",
+        "结尾图：更稳妥的选择思路"
+      ],
+      "negative_constraints": [
+        "不要夸张功效承诺",
+        "不要医疗化表达"
+      ]
+    }
+  ]
+}

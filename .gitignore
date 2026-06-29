@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+output/publish_packages/*.md
+output/publish_packages/*.json
+output/*.md

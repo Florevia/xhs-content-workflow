@@ -1,0 +1,85 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="xhs-auto-publish-flow" name="XHS Auto Publish Flow">
+    <mxGraphModel adaptiveColors="auto" dx="1640" dy="980" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="sourceTopics" value="1. 选题输入&#xa;data/topics.csv&#xa;或 drafts/*.json" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="contentBuild" value="2. 内容生成&#xa;Claude 生成内容&#xa;或本地草稿整理" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="250" width="190" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="profileSelect" value="3. 图片模板选择&#xa;image_profile&#xa;或 category / audience / angle 自动匹配" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="530" y="235" width="230" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="promptRender" value="4. 图片提示词生成&#xa;config/image_prompt_profiles.json&#xa;生成 image_prompts" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="235" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="packageJson" value="5. 发布包输出&#xa;output/publish_packages/*.json&#xa;标题 / 正文 / 话题 / image_prompts" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="235" width="240" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="reviewGate" value="6. 人工审核&#xa;输入 publish 才继续" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="220" width="170" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="geminiImage" value="7. Gemini 自动生图&#xa;gemini_automation.py&#xa;回写 image_paths" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1650" y="120" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="xhsPublish" value="8. 小红书自动发布&#xa;cli.py publish&#xa;标题 / 正文 / 图片" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1650" y="300" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="publishStatus" value="9. 状态回写&#xa;publish_status=published&#xa;note_url 可选" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1920" y="300" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics" value="10. 数据复盘&#xa;data/metrics.csv&#xa;analyze_metrics.py" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1920" y="470" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="skipDraft" value="拒绝审核&#xa;保持 draft&#xa;不生图、不发布" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1395" y="470" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="noteProfileLib" value="模板来源&#xa;prompts/image_profiles/*.md" style="shape=note;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="575" y="80" width="180" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="noteConfig" value="模板配置&#xa;config/image_prompt_profiles.json" style="shape=note;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="850" y="80" width="190" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="sourceTopics" target="contentBuild">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="contentBuild" target="profileSelect">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="profileSelect" target="promptRender">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="promptRender" target="packageJson">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="packageJson" target="reviewGate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="通过" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="reviewGate" target="geminiImage">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="geminiImage" target="xhsPublish">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="xhsPublish" target="publishStatus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" value="手动录入数据" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="publishStatus" target="metrics">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" value="拒绝" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="reviewGate" target="skipDraft">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;dashed=1;html=1;" edge="1" parent="1" source="noteProfileLib" target="profileSelect">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;dashed=1;html=1;" edge="1" parent="1" source="noteConfig" target="promptRender">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
