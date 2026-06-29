@@ -29,7 +29,11 @@ def main() -> None:
     for package_path in package_paths:
         approved = args.yes or confirm_package(package_path)
         try:
-            result = auto_publish_package(package_path, approved=approved)
+            result = auto_publish_package(
+                package_path,
+                approved=approved,
+                require_reviewed_package=args.yes,
+            )
         except ReviewRejected:
             print(f"已跳过发布：{package_path}")
             continue

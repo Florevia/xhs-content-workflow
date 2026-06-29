@@ -66,7 +66,7 @@ def publish_package(
     if not images:
         raise ValueError("Cannot publish without images")
 
-    title_file, content_file = prepare_publish_files(package, temp_dir=temp_dir)
+    title_file, content_file = prepare_publish_files(package, temp_dir=resolve_package_temp_dir(package_path, temp_dir))
     command = build_publish_command(title_file, content_file, images, cli_path=cli_path)
     result = subprocess.run(command, text=True, capture_output=True, check=False)
     if result.returncode != 0:
@@ -110,6 +110,11 @@ def _parse_cli_json(output: str) -> dict[str, Any]:
 
 def _absolute_path(path: Path) -> Path:
     return path if path.is_absolute() else path.absolute()
+
+
+def resolve_package_temp_dir(package_path: Path, temp_dir: Path = DEFAULT_TEMP_DIR) -> Path:
+    """Return an isolated temp directory for one publish package."""
+    return temp_dir / package_path.stem
 
 
 def get_xhs_cli_path() -> Path:

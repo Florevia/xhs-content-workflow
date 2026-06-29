@@ -13,6 +13,16 @@ MATCH_FIELD_NAMES = {
     "angles": "angle",
 }
 
+# 每张图强制竖版 3:4，禁止横版画幅
+MANDATORY_VERTICAL_ASPECT = "必须竖版3:4比例，高度明显大于宽度"
+FORBIDDEN_LANDSCAPE_CONSTRAINTS = [
+    "禁止横版",
+    "禁止16:9比例",
+    "禁止4:3横构图",
+    "禁止宽屏构图",
+    "禁止横向全景布局",
+]
+
 
 def load_image_prompt_profiles(config_path: Path | None = None) -> dict[str, Any]:
     """Load the image prompt profile configuration."""
@@ -175,10 +185,28 @@ def _compose_prompt(
     base_requirements: list[str],
     negative_constraints: list[str],
 ) -> str:
+    requirements, negatives = _ensure_vertical_aspect_constraints(base_requirements, negative_constraints)
     parts = [render_prompt(template, context)]
-    parts.extend(base_requirements)
-    parts.extend(negative_constraints)
+    parts.extend(requirements)
+    parts.extend(negatives)
     return "，".join(part for part in parts if str(part).strip())
+
+
+def _ensure_vertical_aspect_constraints(
+    base_requirements: list[str],
+    negative_constraints: list[str],
+) -> tuple[list[str], list[str]]:
+    """Ensure every rendered image prompt enforces vertical 3:4 and bans landscape."""
+    requirements = list(base_requirements)
+    if not any("竖版" in item and "3:4" in item for item in requirements):
+        requirements.insert(0, MANDATORY_VERTICAL_ASPECT)
+
+    negatives = list(negative_constraints)
+    for constraint in FORBIDDEN_LANDSCAPE_CONSTRAINTS:
+        keyword = constraint.removeprefix("禁止")
+        if not any(keyword in item for item in negatives):
+            negatives.append(constraint)
+    return requirements, negatives
 
 
 def _build_slide_prompt(

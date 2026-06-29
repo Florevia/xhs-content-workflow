@@ -13,6 +13,7 @@ xhs-content-workflow/
 ├── docs/                  # 账号定位、栏目、合规和风格文档
 ├── prompts/               # Claude 提示词模板
 ├── output/publish_packages/
+├── output/published_images/   # 按 MM-DD/发布包名 保存每日生图
 ├── src/                   # 命令行脚本和核心模块
 └── tests/                 # 单元测试
 ```

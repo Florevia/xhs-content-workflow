@@ -12,7 +12,12 @@ from xhs_workflow.image_prompt_profiles import (
     build_image_prompts,
     resolve_image_profile_name,
 )
-from xhs_workflow.images import build_gemini_command, write_gemini_prompts
+from xhs_workflow.images import (
+    build_gemini_command,
+    resolve_daily_image_dir,
+    validate_generated_image_paths,
+    write_gemini_prompts,
+)
 from xhs_workflow.metrics import calculate_rates, summarize_metrics
 from xhs_workflow.packages import (
     PublishPackage,
@@ -22,6 +27,7 @@ from xhs_workflow.packages import (
 from xhs_workflow.publish import (
     build_publish_command,
     prepare_publish_files,
+    resolve_package_temp_dir,
     update_publish_status,
 )
 from xhs_workflow.prompts import render_prompt
@@ -36,6 +42,8 @@ class PromptTests(unittest.TestCase):
         self.assertIn("你是一位专业的小红书视觉内容策划师", template)
         self.assertIn("封面图（第1张）", template)
         self.assertIn("右下角水印：“小美科普”", template)
+        self.assertIn("禁止横版", template)
+        self.assertIn("必须竖版 3:4", template)
 
     def test_render_prompt_replaces_named_placeholders_without_touching_json_braces(self):
         template = """账号：{brand_guide}
@@ -298,6 +306,9 @@ class DraftPackageTests(unittest.TestCase):
         self.assertIn("卡通风格", prompts[0])
         self.assertIn("手绘风格文字", prompts[0])
         self.assertIn("右下角水印：“小美科普”", prompts[-1])
+        for prompt in prompts:
+            self.assertIn("必须竖版3:4比例", prompt)
+            self.assertIn("禁止横版", prompt)
 
     def test_build_image_prompts_selects_profile_by_category(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -397,8 +408,14 @@ class DraftPackageTests(unittest.TestCase):
                 image_suggestions=[],
             )
 
-        self.assertEqual(prompts[0], "默认封面：陌生标题，小红书竖版 3:4")
-        self.assertEqual(prompts[1], "默认结尾图：默认结尾建议，小红书竖版 3:4")
+        self.assertEqual(
+            prompts[0],
+            "默认封面：陌生标题，小红书竖版 3:4，禁止横版，禁止16:9比例，禁止4:3横构图，禁止宽屏构图，禁止横向全景布局",
+        )
+        self.assertEqual(
+            prompts[1],
+            "默认结尾图：默认结尾建议，小红书竖版 3:4，禁止横版，禁止16:9比例，禁止4:3横构图，禁止宽屏构图，禁止横向全景布局",
+        )
 
     def test_create_package_from_draft_writes_standard_package_without_api(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -663,12 +680,42 @@ class ImageAutomationTests(unittest.TestCase):
         command = build_gemini_command(
             Path("/tmp/prompts.json"),
             script_path=Path("/opt/gemini_automation.py"),
+            output_dir=Path("/tmp/published_images/06-29/package"),
         )
 
         self.assertEqual(
             command,
-            ["python3", "/opt/gemini_automation.py", "--prompts", "/tmp/prompts.json"],
+            [
+                "python3",
+                "/opt/gemini_automation.py",
+                "--prompts",
+                "/tmp/prompts.json",
+                "--output-dir",
+                "/tmp/published_images/06-29/package",
+            ],
         )
+
+    def test_resolve_daily_image_dir_uses_month_day_and_package_name(self):
+        from datetime import date
+
+        package_path = Path("/tmp/output/publish_packages/manual-001_note.json")
+        image_dir = resolve_daily_image_dir(
+            package_path,
+            root=Path("/tmp/published_images"),
+            when=date(2026, 6, 29),
+        )
+
+        self.assertEqual(image_dir, Path("/tmp/published_images/06-29/manual-001_note"))
+        self.assertTrue(image_dir.is_dir())
+
+    def test_validate_generated_image_paths_requires_existing_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            existing = Path(tmp) / "image_1.png"
+            existing.write_bytes(b"fake image")
+            missing = Path(tmp) / "image_2.png"
+
+            with self.assertRaises(RuntimeError):
+                validate_generated_image_paths([existing, missing], expected_count=2)
 
 
 class PublishAutomationTests(unittest.TestCase):
@@ -737,6 +784,11 @@ class PublishAutomationTests(unittest.TestCase):
         self.assertEqual(data["publish_status"], "published")
         self.assertEqual(data["note_url"], "https://www.xiaohongshu.com/explore/abc")
 
+    def test_resolve_package_temp_dir_isolates_files_by_package_name(self):
+        temp_dir = resolve_package_temp_dir(Path("/tmp/packages/manual-001_note.json"), Path("/tmp/xhs-temp"))
+
+        self.assertEqual(temp_dir, Path("/tmp/xhs-temp/manual-001_note"))
+
 
 class AutoPublishFlowTests(unittest.TestCase):
     def test_auto_publish_package_stops_when_review_is_not_approved(self):
@@ -760,7 +812,7 @@ class AutoPublishFlowTests(unittest.TestCase):
                 auto_publish_package(
                     package_path,
                     approved=False,
-                    image_generator=lambda prompts: calls.append("images") or [],
+                    image_generator=lambda prompts, output_dir: calls.append("images") or [],
                     publisher=lambda path, images: calls.append("publish") or {},
                 )
 
@@ -786,13 +838,87 @@ class AutoPublishFlowTests(unittest.TestCase):
             result = auto_publish_package(
                 package_path,
                 approved=True,
-                image_generator=lambda prompts: [Path("/tmp/image_1.jpg")],
+                image_generator=lambda prompts, output_dir: [Path("/tmp/image_1.jpg")],
                 publisher=lambda path, images: {"success": True, "images": [str(image) for image in images]},
             )
             data = json.loads(package_path.read_text(encoding="utf-8"))
 
         self.assertEqual(result["success"], True)
         self.assertEqual(data["image_paths"], ["/tmp/image_1.jpg"])
+
+    def test_auto_publish_package_rejects_high_risk_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_path = Path(tmp) / "package.json"
+            package_path.write_text(
+                json.dumps(
+                    {
+                        "recommended_title": "第一台咖啡机别乱买",
+                        "body": "正文",
+                        "hashtags": ["咖啡机"],
+                        "image_prompts": ["图片提示词"],
+                        "compliance_check": {"risk_level": "high"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            calls: list[str] = []
+
+            with self.assertRaises(ReviewRejected):
+                auto_publish_package(
+                    package_path,
+                    approved=True,
+                    image_generator=lambda prompts, output_dir: calls.append("images") or [],
+                    publisher=lambda path, images: calls.append("publish") or {},
+                )
+
+        self.assertEqual(calls, [])
+
+    def test_auto_publish_package_requires_reviewed_status_for_unattended_publish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_path = Path(tmp) / "package.json"
+            package_path.write_text(
+                json.dumps(
+                    {
+                        "recommended_title": "第一台咖啡机别乱买",
+                        "body": "正文",
+                        "hashtags": ["咖啡机"],
+                        "image_prompts": ["图片提示词"],
+                        "review_status": "draft",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ReviewRejected):
+                auto_publish_package(package_path, approved=True, require_reviewed_package=True)
+
+    def test_auto_publish_package_records_image_generation_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package_path = Path(tmp) / "package.json"
+            package_path.write_text(
+                json.dumps(
+                    {
+                        "recommended_title": "第一台咖啡机别乱买",
+                        "body": "正文",
+                        "hashtags": ["咖啡机"],
+                        "image_prompts": ["图片提示词"],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            def fail_images(prompts: list[str], output_dir: Path) -> list[Path]:
+                raise RuntimeError("Gemini failed")
+
+            with self.assertRaises(RuntimeError):
+                auto_publish_package(package_path, approved=True, image_generator=fail_images)
+            data = json.loads(package_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(data["publish_status"], "failed")
+        self.assertIn("Gemini failed", data["publish_error"])
 
 
 class MetricsTests(unittest.TestCase):
