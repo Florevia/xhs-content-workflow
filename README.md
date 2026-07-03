@@ -1,6 +1,6 @@
 # xhs-content-workflow
 
-一个小红书内容生产与自动发布工作流：可以从本地草稿生成发布包，再自动调用 Gemini 生图和小红书 CLI 发布。Claude API 只是可选的自动写文案能力。
+一个小红书内容生产与自动发布工作流：可以从本地草稿生成发布包，再自动调用 ChatGPT image2 生图和小红书 CLI 发布。Claude API 只是可选的自动写文案能力。
 
 本项目不做自动登录、不读取 Cookie、不绕过验证码；发布动作通过本机已有的小红书自动化 CLI 执行。
 
@@ -113,7 +113,7 @@ flowchart LR
     promptRender["图片提示词生成<br/>config/image_prompt_profiles.json"]
     publishPackage["发布包输出<br/>output/publish_packages/*.json"]
     reviewGate{"人工审核<br/>输入 publish 才继续"}
-    geminiImage["Gemini 自动生图<br/>gemini_automation.py"]
+    chatgptImage["ChatGPT image2 自动生图<br/>chatgpt_automation.py"]
     xhsPublish["小红书自动发布<br/>cli.py publish"]
     publishStatus["状态回写<br/>publish_status / note_url"]
     metrics["数据复盘<br/>data/metrics.csv / analyze_metrics.py"]
@@ -124,8 +124,8 @@ flowchart LR
     profileSelect --> promptRender
     promptRender --> publishPackage
     publishPackage --> reviewGate
-    reviewGate -->|通过| geminiImage
-    geminiImage --> xhsPublish
+    reviewGate -->|通过| chatgptImage
+    chatgptImage --> xhsPublish
     xhsPublish --> publishStatus
     publishStatus --> metrics
     reviewGate -->|拒绝| skipPublish
@@ -153,7 +153,7 @@ PYTHONPATH=src python3 src/create_package.py drafts/my_post.json
 PYTHONPATH=src python3 src/auto_publish.py --package output/publish_packages/manual-001_新手如何选择第一台咖啡机.json
 ```
 
-命令会展示标题、正文、话题和合规风险。审核通过请输入 `publish`，之后系统会调用 Gemini 自动生成图片，并调用小红书 CLI 一步发布。
+命令会展示标题、正文、话题和合规风险。审核通过请输入 `publish`，之后系统会调用 ChatGPT image2 自动生成图片，并调用小红书 CLI 一步发布。
 
 ### 方案二：Claude API 自动生成文案
 
@@ -181,11 +181,13 @@ PYTHONPATH=src python3 src/auto_publish.py --yes
 
 ## 自动发布前置条件
 
-1. Chrome、bridge server、Gemini 登录状态可用。
+1. Chrome、bridge server、ChatGPT 登录状态可用。
 2. 小红书账号已登录，且 `/Users/lilin/.claude/skills/xiaohongshu-skills/scripts/cli.py check-login` 通过。
-3. Gemini 图片生成脚本可用：`/Users/lilin/.claude/skills/lilin-rednote/scripts/gemini_automation.py`。
-4. 发布频率要控制，避免短时间批量发布。
-5. 只有使用方案二时才需要 `ANTHROPIC_API_KEY`。
+3. ChatGPT 图片生成脚本可用：`/Users/lilin/.claude/skills/lilin-rednote/scripts/chatgpt_automation.py`。
+4. 默认直接复用当前 bridge 已连接的 Chrome 会话；如需显式走 Google 账号选择页，可在 `.env` 中设置 `CHATGPT_USE_GOOGLE_ACCOUNT_CHOOSER=true`，并配合 `CHATGPT_GOOGLE_ACCOUNT_NAME=scoheart` 使用。
+5. 生成多图时需要 ChatGPT Thinking（思考）模式可用；脚本会在每批生成前尝试自动切换。
+6. 发布频率要控制，避免短时间批量发布。
+7. 只有使用方案二时才需要 `ANTHROPIC_API_KEY`。
 
 ## 数据复盘
 

@@ -22,7 +22,7 @@
         <mxCell id="reviewGate" value="6. 人工审核&#xa;输入 publish 才继续" style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
           <mxGeometry x="1410" y="220" width="170" height="150" as="geometry"/>
         </mxCell>
-        <mxCell id="geminiImage" value="7. Gemini 自动生图&#xa;gemini_automation.py&#xa;回写 image_paths" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+        <mxCell id="chatgptImage" value="7. ChatGPT image2 自动生图&#xa;chatgpt_automation.py&#xa;回写 image_paths" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
           <mxGeometry x="1650" y="120" width="220" height="100" as="geometry"/>
         </mxCell>
         <mxCell id="xhsPublish" value="8. 小红书自动发布&#xa;cli.py publish&#xa;标题 / 正文 / 图片" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
@@ -58,10 +58,10 @@
         <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="packageJson" target="reviewGate">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" value="通过" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="reviewGate" target="geminiImage">
+        <mxCell id="e6" value="通过" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="reviewGate" target="chatgptImage">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="geminiImage" target="xhsPublish">
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="chatgptImage" target="xhsPublish">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="1" source="xhsPublish" target="publishStatus">

@@ -1,8 +1,12 @@
 import csv
+import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from xhs_workflow.automation import ReviewRejected, auto_publish_package
 from xhs_workflow.claude_client import extract_json_object
@@ -13,10 +17,14 @@ from xhs_workflow.image_prompt_profiles import (
     resolve_image_profile_name,
 )
 from xhs_workflow.images import (
-    build_gemini_command,
+    build_chatgpt_command,
+    build_combined_batch_prompt,
+    chunk_prompts,
+    finalize_image_prompt,
+    generate_images,
     resolve_daily_image_dir,
     validate_generated_image_paths,
-    write_gemini_prompts,
+    write_chatgpt_batches,
 )
 from xhs_workflow.metrics import calculate_rates, summarize_metrics
 from xhs_workflow.packages import (
@@ -41,9 +49,10 @@ class PromptTests(unittest.TestCase):
 
         self.assertIn("你是一位专业的小红书视觉内容策划师", template)
         self.assertIn("封面图（第1张）", template)
-        self.assertIn("右下角水印：“小美科普”", template)
+        self.assertIn("不要任何水印或品牌标识", template)
         self.assertIn("禁止横版", template)
         self.assertIn("必须竖版 3:4", template)
+        self.assertIn("1000 字", template)
 
     def test_render_prompt_replaces_named_placeholders_without_touching_json_braces(self):
         template = """账号：{brand_guide}
@@ -248,7 +257,7 @@ class DraftPackageTests(unittest.TestCase):
                         "fallback_profile": "planner_profile",
                         "global_quality_rules": {
                             "base_requirements": ["小红书风格信息图", "竖版（3:4）"],
-                            "negative_constraints": ["右下角水印：“小美科普”"],
+                            "negative_constraints": ["不要任何水印"],
                         },
                         "profiles": [
                             {
@@ -286,7 +295,7 @@ class DraftPackageTests(unittest.TestCase):
         self.assertIn("内容图：观点三", prompts[3])
         self.assertIn("结尾图：结尾行动号召", prompts[4])
 
-    def test_default_image_prompts_include_cartoon_handdrawn_watermark_constraints(self):
+    def test_default_image_prompts_include_cartoon_handdrawn_no_watermark_constraints(self):
         prompts = build_image_prompts(
             topic="全球市值前五十的公司",
             category="投资",
@@ -305,7 +314,8 @@ class DraftPackageTests(unittest.TestCase):
 
         self.assertIn("卡通风格", prompts[0])
         self.assertIn("手绘风格文字", prompts[0])
-        self.assertIn("右下角水印：“小美科普”", prompts[-1])
+        self.assertIn("不要任何水印", prompts[-1])
+        self.assertNotIn("右下角水印", prompts[-1])
         for prompt in prompts:
             self.assertIn("必须竖版3:4比例", prompt)
             self.assertIn("禁止横版", prompt)
@@ -659,27 +669,164 @@ class GenerationResultTests(unittest.TestCase):
 
 
 class ImageAutomationTests(unittest.TestCase):
-    def test_write_gemini_prompts_uses_existing_script_format(self):
+    def test_chatgpt_automation_defaults_to_scoheart_google_account(self):
+        module_path = Path("/Users/lilin/.claude/skills/lilin-rednote/scripts/chatgpt_automation.py")
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHATGPT_GOOGLE_ACCOUNT_NAME", None)
+            spec = importlib.util.spec_from_file_location("chatgpt_automation_test_module", module_path)
+            module = importlib.util.module_from_spec(spec)
+            assert spec and spec.loader
+            spec.loader.exec_module(module)
+
+        self.assertEqual(module.GOOGLE_ACCOUNT_NAME, "scoheart")
+
+    def test_chatgpt_automation_disables_google_account_chooser_by_default(self):
+        module_path = Path("/Users/lilin/.claude/skills/lilin-rednote/scripts/chatgpt_automation.py")
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CHATGPT_USE_GOOGLE_ACCOUNT_CHOOSER", None)
+            spec = importlib.util.spec_from_file_location("chatgpt_automation_test_module", module_path)
+            module = importlib.util.module_from_spec(spec)
+            assert spec and spec.loader
+            spec.loader.exec_module(module)
+
+        self.assertFalse(module.USE_GOOGLE_ACCOUNT_CHOOSER)
+
+    def test_finalize_image_prompt_appends_social_ui_bans(self):
+        prompt = finalize_image_prompt("竖版3:4信息图，主标题测试")
+        self.assertIn("不要模拟社交媒体帖子界面", prompt)
+        self.assertIn("不要出现点赞/收藏/分享/评论按钮栏", prompt)
+
+    def test_finalize_image_prompt_is_idempotent(self):
+        prompt = finalize_image_prompt("已有约束，不要模拟社交媒体帖子界面")
+        self.assertEqual(prompt.count("不要模拟社交媒体帖子界面"), 1)
+
+    def test_generate_batch_waits_longer_and_does_not_restart_session_after_send(self):
+        module_path = Path("/Users/lilin/.claude/skills/lilin-rednote/scripts/chatgpt_automation.py")
+        spec = importlib.util.spec_from_file_location("chatgpt_automation_test_module", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+
+        automator = module.ChatGPTAutomator.__new__(module.ChatGPTAutomator)
+        automator._saved_image_hashes = set()
+        automator._session_ready = True
+
+        ensure_session_calls: list[str] = []
+        wait_calls: list[tuple[int, int]] = []
+        sleep_calls: list[float] = []
+
+        automator.ensure_session = lambda: ensure_session_calls.append("ensure") or True
+        automator._get_image_turns = lambda: []
+        automator._send_prompt = lambda prompt: True
+        automator._wait_for_batch_turn = (
+            lambda previous_turn_count, expected_count, timeout=180, poll_interval=2.0: (
+                wait_calls.append((expected_count, timeout)) or []
+            )
+        )
+
+        with patch.object(module.time, "sleep", side_effect=lambda seconds: sleep_calls.append(seconds)):
+            result = automator.generate_batch(
+                {
+                    "batch_index": 1,
+                    "start_index": 1,
+                    "count": 6,
+                    "prompt": "第1张...\n\n---\n\n第6张...",
+                }
+            )
+
+        self.assertEqual(result, [])
+        self.assertEqual(ensure_session_calls, ["ensure"])
+        self.assertEqual(len(wait_calls), 1)
+        self.assertEqual(wait_calls[0][0], 6)
+        self.assertGreaterEqual(wait_calls[0][1], 480)
+        self.assertTrue(sleep_calls)
+        self.assertGreaterEqual(sleep_calls[0], 120)
+
+    def test_chunk_prompts_splits_batches_by_max_size(self):
+        batches = chunk_prompts([f"提示词{i}" for i in range(1, 11)], max_batch=8)
+
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(len(batches[0]), 8)
+        self.assertEqual(len(batches[1]), 2)
+        self.assertEqual(batches[0][0], "提示词1")
+        self.assertEqual(batches[1][-1], "提示词10")
+
+    def test_build_combined_batch_prompt_keeps_each_prompt_in_order(self):
+        prompt = build_combined_batch_prompt(
+            [
+                "第1张/共2张，封面图，小红书信息图",
+                "第2张/共2张，内容图，趋势拆解",
+            ],
+            count=2,
+        )
+
+        self.assertIn("第1张/共2张，封面图", prompt)
+        self.assertIn("第2张/共2张，内容图", prompt)
+        self.assertEqual(prompt.count("\n\n---\n\n"), 1)
+
+    def test_build_combined_batch_prompt_just_concatenates_slide_prompts_without_extra_header(self):
+        prompt = build_combined_batch_prompt(
+            [
+                "第1张/共2张，封面图，小红书信息图",
+                "第2张/共2张，内容图，趋势拆解",
+            ],
+            count=2,
+        )
+
+        self.assertEqual(
+            prompt,
+            "第1张/共2张，封面图，小红书信息图\n\n---\n\n第2张/共2张，内容图，趋势拆解",
+        )
+        self.assertNotIn("Thinking", prompt)
+        self.assertNotIn("一次性生成以下全部", prompt)
+
+    def test_write_chatgpt_batches_writes_grouped_batch_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "prompts.json"
-            output_path = write_gemini_prompts(
-                ["封面图提示词", "内容图提示词"],
+            path = Path(tmp) / "batches.json"
+            output_path = write_chatgpt_batches(
+                [f"第{i}张图片提示词" for i in range(1, 10)],
                 path,
             )
             data = json.loads(output_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(
-            data,
-            [
-                {"index": 1, "type": "封面图", "prompt": "封面图提示词"},
-                {"index": 2, "type": "内容图", "prompt": "内容图提示词"},
-            ],
-        )
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["batch_index"], 1)
+        self.assertEqual(data[0]["start_index"], 1)
+        self.assertEqual(data[0]["end_index"], 8)
+        self.assertEqual(data[0]["count"], 8)
+        self.assertEqual(data[1]["batch_index"], 2)
+        self.assertEqual(data[1]["start_index"], 9)
+        self.assertEqual(data[1]["end_index"], 9)
+        self.assertEqual(data[1]["count"], 1)
+        self.assertNotIn("Thinking", data[0]["prompt"])
+        self.assertNotIn("一次性生成以下全部", data[0]["prompt"])
+        self.assertIn("不要模拟社交媒体帖子界面", data[0]["prompt"])
+        self.assertEqual(data[0]["prompt"].count("不要模拟社交媒体帖子界面"), 1)
+        self.assertIn("第1张图片提示词", data[0]["prompt"])
+        self.assertIn("第8张图片提示词", data[0]["prompt"])
+        self.assertIn("第9张图片提示词", data[1]["prompt"])
 
-    def test_build_gemini_command_uses_absolute_prompt_path(self):
-        command = build_gemini_command(
-            Path("/tmp/prompts.json"),
-            script_path=Path("/opt/gemini_automation.py"),
+    def test_write_chatgpt_batches_appends_global_constraints_once_per_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "batches.json"
+            output_path = write_chatgpt_batches(
+                [
+                    "第1张图片提示词，不要任何水印",
+                    "第2张图片提示词，不要任何水印",
+                ],
+                path,
+            )
+            data = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["prompt"].count("不要模拟社交媒体帖子界面"), 1)
+        self.assertEqual(data[0]["prompt"].count("不要出现点赞/收藏/分享/评论按钮栏"), 1)
+        self.assertEqual(data[0]["prompt"].count("不要任何水印"), 2)
+
+    def test_build_chatgpt_command_uses_absolute_prompt_path(self):
+        command = build_chatgpt_command(
+            Path("/tmp/batches.json"),
+            script_path=Path("/opt/chatgpt_automation.py"),
             output_dir=Path("/tmp/published_images/06-29/package"),
         )
 
@@ -687,13 +834,60 @@ class ImageAutomationTests(unittest.TestCase):
             command,
             [
                 "python3",
-                "/opt/gemini_automation.py",
+                "/opt/chatgpt_automation.py",
                 "--prompts",
-                "/tmp/prompts.json",
+                "/tmp/batches.json",
                 "--output-dir",
                 "/tmp/published_images/06-29/package",
             ],
         )
+
+    def test_generate_images_runs_chatgpt_script_with_batch_file_and_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "images"
+            output_dir.mkdir()
+            image_path = output_dir / "image_1.png"
+            image_path.write_bytes(b"distinct image bytes")
+            prompts_path = root / "batches.json"
+            fake_result = SimpleNamespace(
+                stdout=json.dumps([str(image_path)], ensure_ascii=False),
+                stderr="",
+                returncode=0,
+            )
+
+            with patch("xhs_workflow.images.subprocess.run", return_value=fake_result) as run_mock:
+                result = generate_images(
+                    ["第1张/共1张，封面图，测试提示词"],
+                    output_dir=output_dir,
+                    prompts_path=prompts_path,
+                    script_path=Path("/opt/chatgpt_automation.py"),
+                )
+            batch_payload = json.loads(prompts_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, [image_path])
+        run_mock.assert_called_once()
+        self.assertEqual(
+            run_mock.call_args.args[0],
+            [
+                "python3",
+                "/opt/chatgpt_automation.py",
+                "--prompts",
+                str(prompts_path),
+                "--output-dir",
+                str(output_dir),
+            ],
+        )
+        self.assertEqual(run_mock.call_args.kwargs["check"], False)
+        self.assertIn("PYTHONPATH", run_mock.call_args.kwargs["env"])
+        self.assertTrue(
+            run_mock.call_args.kwargs["env"]["PYTHONPATH"].startswith(
+                "/Users/lilin/.claude/skills/xiaohongshu-skills/scripts"
+            )
+        )
+        self.assertEqual(batch_payload[0]["count"], 1)
+        self.assertNotIn("Thinking", batch_payload[0]["prompt"])
+        self.assertNotIn("一次性生成以下全部", batch_payload[0]["prompt"])
 
     def test_resolve_daily_image_dir_uses_month_day_and_package_name(self):
         from datetime import date
@@ -716,6 +910,35 @@ class ImageAutomationTests(unittest.TestCase):
 
             with self.assertRaises(RuntimeError):
                 validate_generated_image_paths([existing, missing], expected_count=2)
+
+    def test_validate_generated_image_paths_uses_chatgpt_in_short_count_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            existing = Path(tmp) / "image_1.png"
+            existing.write_bytes(b"fake image")
+
+            with self.assertRaisesRegex(RuntimeError, "ChatGPT returned 1 images, expected 2"):
+                validate_generated_image_paths([existing], expected_count=2)
+
+    def test_validate_generated_image_paths_rejects_duplicate_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image_1 = Path(tmp) / "image_1.png"
+            image_2 = Path(tmp) / "image_2.png"
+            image_1.write_bytes(b"same bytes")
+            image_2.write_bytes(b"same bytes")
+
+            with self.assertRaises(RuntimeError):
+                validate_generated_image_paths([image_1, image_2])
+
+    def test_validate_generated_image_paths_accepts_distinct_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image_1 = Path(tmp) / "image_1.png"
+            image_2 = Path(tmp) / "image_2.png"
+            image_1.write_bytes(b"cover image bytes")
+            image_2.write_bytes(b"content image bytes")
+
+            result = validate_generated_image_paths([image_1, image_2])
+
+        self.assertEqual(result, [image_1, image_2])
 
 
 class PublishAutomationTests(unittest.TestCase):
@@ -911,14 +1134,14 @@ class AutoPublishFlowTests(unittest.TestCase):
             )
 
             def fail_images(prompts: list[str], output_dir: Path) -> list[Path]:
-                raise RuntimeError("Gemini failed")
+                raise RuntimeError("ChatGPT failed")
 
             with self.assertRaises(RuntimeError):
                 auto_publish_package(package_path, approved=True, image_generator=fail_images)
             data = json.loads(package_path.read_text(encoding="utf-8"))
 
         self.assertEqual(data["publish_status"], "failed")
-        self.assertIn("Gemini failed", data["publish_error"])
+        self.assertIn("ChatGPT failed", data["publish_error"])
 
 
 class MetricsTests(unittest.TestCase):
