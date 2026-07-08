@@ -889,6 +889,57 @@ class ImageAutomationTests(unittest.TestCase):
         self.assertNotIn("Thinking", batch_payload[0]["prompt"])
         self.assertNotIn("一次性生成以下全部", batch_payload[0]["prompt"])
 
+    def test_generate_images_retries_once_after_transient_zero_image_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "images"
+            output_dir.mkdir()
+            image_path = output_dir / "image_1.png"
+            image_path.write_bytes(b"distinct image bytes")
+            prompts_path = root / "batches.json"
+            failed_result = SimpleNamespace(stdout="", stderr="", returncode=0)
+            success_result = SimpleNamespace(
+                stdout=json.dumps([str(image_path)], ensure_ascii=False),
+                stderr="",
+                returncode=0,
+            )
+
+            with patch(
+                "xhs_workflow.images.subprocess.run",
+                side_effect=[failed_result, success_result],
+            ) as run_mock:
+                result = generate_images(
+                    ["第1张/共1张，封面图，测试提示词"],
+                    output_dir=output_dir,
+                    prompts_path=prompts_path,
+                    script_path=Path("/opt/chatgpt_automation.py"),
+                )
+
+        self.assertEqual(result, [image_path])
+        self.assertEqual(run_mock.call_count, 2)
+
+    def test_generate_images_raises_after_exhausting_retries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "images"
+            output_dir.mkdir()
+            prompts_path = root / "batches.json"
+            failed_result = SimpleNamespace(stdout="", stderr="", returncode=0)
+
+            with patch(
+                "xhs_workflow.images.subprocess.run",
+                side_effect=[failed_result, failed_result],
+            ) as run_mock:
+                with self.assertRaises(RuntimeError):
+                    generate_images(
+                        ["第1张/共1张，封面图，测试提示词"],
+                        output_dir=output_dir,
+                        prompts_path=prompts_path,
+                        script_path=Path("/opt/chatgpt_automation.py"),
+                    )
+
+        self.assertEqual(run_mock.call_count, 2)
+
     def test_resolve_daily_image_dir_uses_month_day_and_package_name(self):
         from datetime import date
 

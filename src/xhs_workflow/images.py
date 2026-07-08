@@ -111,13 +111,42 @@ def build_chatgpt_command(
     return command
 
 
+# ChatGPT 网页自动化偶发首次发送后检测不到图片（页面渲染较慢/首次打开标签页），
+# 这是已知瞬时故障（见 AGENTS.md 错误修复记录 2026-07-08），因此默认重试一次再判定失败。
+DEFAULT_GENERATE_RETRIES = 1
+
+
 def generate_images(
     prompts: list[str],
     output_dir: Path | None = None,
     prompts_path: Path = DEFAULT_PROMPTS_PATH,
     script_path: Path | None = None,
+    retries: int = DEFAULT_GENERATE_RETRIES,
 ) -> list[Path]:
-    """Generate images through the ChatGPT automation script and return image paths."""
+    """Generate images through the ChatGPT automation script and return image paths.
+
+    Retries the whole ChatGPT batch once (by default) on transient "0 images
+    returned" failures before raising, since a single flaky attempt should not
+    fail the entire publish flow.
+    """
+    attempts = max(1, retries + 1)
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return _generate_images_once(prompts, output_dir=output_dir, prompts_path=prompts_path, script_path=script_path)
+        except RuntimeError as error:
+            last_error = error
+            if attempt >= attempts:
+                raise
+    raise last_error or RuntimeError("ChatGPT image generation failed")
+
+
+def _generate_images_once(
+    prompts: list[str],
+    output_dir: Path | None,
+    prompts_path: Path,
+    script_path: Path | None,
+) -> list[Path]:
     prompt_file = write_chatgpt_batches(prompts, _resolve_prompts_path(prompts_path))
     command = build_chatgpt_command(prompt_file, script_path=script_path, output_dir=output_dir)
     result = subprocess.run(command, text=True, capture_output=True, check=False, env=_build_chatgpt_env())
