@@ -72,6 +72,34 @@
       ]
     },
     {
+      "name": "mechanism_explainer",
+      "match": {
+        "categories": ["投资"],
+        "angles": ["教程", "科普", "入门"],
+        "keywords": ["机制", "规则", "流程", "中签", "回拨", "分配", "打新", "申购", "公开发售"]
+      },
+      "cover_template": "第{slide_index}张/共{total_slides}张，{slide_role}，机制讲解封面信息图，标题“{recommended_title}”，副标题“{cover_text}”，核心信息“{image_suggestion}”，画面主视觉必须是流程箭头/规则卡片/因果链，不做收益刺激或操作号召",
+      "content_templates": [
+        "第{slide_index}张/共{total_slides}张，{slide_role}，机制拆解卡片风格，围绕“{image_suggestion}”，用「前提-触发-结果」三段式讲清规则链条，必须出现流程箭头或分层规则卡",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，误区澄清卡片风格，围绕“{image_suggestion}”，用对比栏讲清常见误解与实际规则，避免引导具体操作",
+        "第{slide_index}张/共{total_slides}张，{slide_role}，官方口径提示卡片风格，围绕“{image_suggestion}”，强调以发售章程/公告/持牌机构说明为准，文字区优先承载机制说明"
+      ],
+      "closing_template": "第{slide_index}张/共{total_slides}张，{slide_role}，机制总结收尾卡片，围绕“{image_suggestion}”，用一句话收束规则理解和合规边界，不给收益承诺或中签预测",
+      "default_image_suggestions": [
+        "封面图：一张图讲清这个机制怎么运转",
+        "内容图：规则链条——先看参与方和份额池如何流转",
+        "内容图：触发条件——什么情况下机制会变化",
+        "内容图：常见误区——哪些直觉理解其实不准确",
+        "结尾图：只做机制科普，具体以官方文件为准"
+      ],
+      "negative_constraints": [
+        "不要使用收益率、中签率、稳赚、必中等刺激性表达",
+        "不要画成买入卖出或下单操作教程",
+        "不要出现具体新股名称、股票代码或个股推荐",
+        "不要把机制讲解弱化成泛泛避坑清单"
+      ]
+    },
+    {
       "name": "decision_checklist",
       "match": {
         "angles": ["避坑", "清单", "教程"],

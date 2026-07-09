@@ -35,6 +35,13 @@
 
 这类内容的对应图片应在文字编辑区域展示更完整的分析文字（结构化小标题 + 分点论述），克制使用卡通装饰，避免夸大确定性，不给出具体时间点或收益数字承诺。
 
+当分类涉及投资 / 金融科普，且选题核心是“机制、规则、流程、申购、中签、回拨、分配、公开发售”等讲解型内容时：
+- image_profile 优先选择 mechanism_explainer，而不是 decision_checklist。
+- image_suggestions 必须围绕“机制讲清楚”拆解，不要跑偏成收益、成本、杠杆、买卖时机或泛泛避坑清单。
+- 内容图优先使用：机制总览、触发条件、分配/流转规则、常见误区澄清、官方口径/合规边界。
+- 每张图的核心信息要能回答“这个规则怎么运转、为什么会这样、读者最容易误解哪一步”。
+- 不得出现具体新股名称、股票代码、具体中签率、收益率、收益承诺或加杠杆操作参数。
+
 图片数量判断标准：
 1. 简单观点、单一主题：4-6 张。
 2. 中等复杂度、教程类：4-6 张。
@@ -65,7 +72,7 @@
     "第2张｜内容图｜核心信息｜主标题｜副标题/要点｜补充说明",
     "第N张｜结尾图｜核心信息｜主标题｜副标题/要点｜补充说明"
   ],
-  "image_profile": "最适合该主题的图片模板名，如 business_infographic / decision_checklist / lifestyle_flatlay / beauty_comparison",
+  "image_profile": "最适合该主题的图片模板名，如 business_infographic / mechanism_explainer / decision_checklist / lifestyle_flatlay / beauty_comparison",
   "publish_time_suggestion": "建议发布时间",
   "compliance_check": {
     "risk_level": "low / medium / high",
@@ -82,7 +89,7 @@
 5. 不编造亲身经历或无法验证的数据。
 6. 标题要短，优先控制在小红书移动端一眼能看懂。
 7. 不要输出最终 image_prompts，由本地模板系统统一生成。
-8. image_profile 只能从以下值中选择一个：business_infographic、decision_checklist、lifestyle_flatlay、beauty_comparison。
+8. image_profile 只能从以下值中选择一个：business_infographic、mechanism_explainer、decision_checklist、lifestyle_flatlay、beauty_comparison。
 9. image_suggestions 需要严格按图片顺序输出，每条都要包含：图片定位、1句话核心信息、主标题、副标题/要点、补充说明。
 10. image_suggestions 总数必须与内容复杂度匹配，范围为 1-10 张，默认第 1 条为封面图，最后 1 条为结尾图。
 11. 所有配图规划必须按竖版 3:4 设计，不得出现横版、宽屏、16:9 等横向画幅描述。

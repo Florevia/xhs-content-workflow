@@ -53,6 +53,7 @@ class PromptTests(unittest.TestCase):
         self.assertIn("禁止横版", template)
         self.assertIn("必须竖版 3:4", template)
         self.assertIn("1000 字", template)
+        self.assertIn("mechanism_explainer", template)
 
     def test_render_prompt_replaces_named_placeholders_without_touching_json_braces(self):
         template = """账号：{brand_guide}
@@ -319,6 +320,36 @@ class DraftPackageTests(unittest.TestCase):
         for prompt in prompts:
             self.assertIn("必须竖版3:4比例", prompt)
             self.assertIn("禁止横版", prompt)
+
+    def test_mechanism_topics_use_mechanism_explainer_profile(self):
+        profile_name = resolve_image_profile_name(
+            category="投资",
+            audience="想搞懂中签规则的新手投资者",
+            angle="教程",
+            topic="港股打新需要注意什么？中签机制详细讲解",
+        )
+        prompts = build_image_prompts(
+            topic="港股打新需要注意什么？中签机制详细讲解",
+            category="投资",
+            audience="想搞懂中签规则的新手投资者",
+            angle="教程",
+            recommended_title="港股打新中签机制讲清楚",
+            cover_texts=["回拨机制、分配规则\n打新前你该知道的常识"],
+            body="正文",
+            image_suggestions=[
+                "封面图：港股打新中签机制讲清楚｜核心信息：回拨机制和分配规则到底怎么影响中签｜要点：新手打新前先搞懂这套规则，不构成投资建议",
+                "内容图：回拨机制拆解｜核心信息：公开发售超购越猛，从国际配售回拨的份额比例往往越高｜要点：具体回拨比例以每只新股发售章程为准",
+                "内容图：分配机制拆解｜核心信息：实际分配方式由发售章程和保荐机构按公开规则执行，不是申购越多越占优｜要点：不要轻信稳中必中的说法",
+                "结尾图：理性看待港股打新｜核心信息：本内容仅作机制科普，不提供个股分析、不做收益承诺、不构成投资建议",
+            ],
+        )
+
+        self.assertEqual(profile_name, "mechanism_explainer")
+        self.assertIn("机制讲解封面信息图", prompts[0])
+        self.assertIn("流程箭头/规则卡片/因果链", prompts[0])
+        self.assertIn("前提-触发-结果", prompts[1])
+        self.assertIn("误区澄清卡片风格", prompts[2])
+        self.assertIn("不要把机制讲解弱化成泛泛避坑清单", prompts[-1])
 
     def test_build_image_prompts_selects_profile_by_category(self):
         with tempfile.TemporaryDirectory() as tmp:
