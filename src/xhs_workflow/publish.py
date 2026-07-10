@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -55,6 +57,29 @@ def build_publish_command(
     return command
 
 
+def normalize_image_order(images: list[Path]) -> list[Path]:
+    """Sort image paths by explicit slide numbers when filenames provide them."""
+    cleaned = [Path(image) for image in images if str(image).strip()]
+    indexed = [(_extract_image_order(image), position, image) for position, image in enumerate(cleaned)]
+    if indexed and all(order is not None for order, _, _ in indexed):
+        return [image for order, position, image in sorted(indexed, key=lambda item: (item[0], item[1]))]
+    return cleaned
+
+
+def prepare_ordered_publish_images(images: list[Path], temp_dir: Path) -> list[Path]:
+    """Copy images into a numbered temp directory so upload order is deterministic."""
+    ordered = normalize_image_order(images)
+    upload_dir = temp_dir / "ordered_images"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    prepared: list[Path] = []
+    for index, image in enumerate(ordered, start=1):
+        source = _absolute_path(image)
+        target = upload_dir / f"{index:02d}_{_safe_image_filename(source.name)}"
+        shutil.copy2(source, target)
+        prepared.append(target)
+    return prepared
+
+
 def publish_package(
     package_path: Path,
     images: list[Path],
@@ -66,8 +91,10 @@ def publish_package(
     if not images:
         raise ValueError("Cannot publish without images")
 
-    title_file, content_file = prepare_publish_files(package, temp_dir=resolve_package_temp_dir(package_path, temp_dir))
-    command = build_publish_command(title_file, content_file, images, cli_path=cli_path)
+    package_temp_dir = resolve_package_temp_dir(package_path, temp_dir)
+    title_file, content_file = prepare_publish_files(package, temp_dir=package_temp_dir)
+    ordered_images = prepare_ordered_publish_images(images, package_temp_dir)
+    command = build_publish_command(title_file, content_file, ordered_images, cli_path=cli_path)
     result = subprocess.run(command, text=True, capture_output=True, check=False)
     if result.returncode != 0:
         update_publish_status(package_path, status="failed", error=result.stderr or result.stdout)
@@ -110,6 +137,28 @@ def _parse_cli_json(output: str) -> dict[str, Any]:
 
 def _absolute_path(path: Path) -> Path:
     return path if path.is_absolute() else path.absolute()
+
+
+def _extract_image_order(path: Path) -> int | None:
+    """Extract an intended slide number from common generated image filenames."""
+    stem = path.stem
+    patterns = [
+        r"^(\d+)(?:[_\-\s]|$)",
+        r"(?:^|[_\-\s])image[_\-\s]?(\d+)(?:[_\-\s]|$)",
+        r"\((\d+)\)$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, stem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _safe_image_filename(filename: str) -> str:
+    path = Path(filename)
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", path.stem).strip("._") or "image"
+    suffix = path.suffix if re.fullmatch(r"\.[A-Za-z0-9]+", path.suffix) else ".png"
+    return f"{stem}{suffix.lower()}"
 
 
 def resolve_package_temp_dir(package_path: Path, temp_dir: Path = DEFAULT_TEMP_DIR) -> Path:

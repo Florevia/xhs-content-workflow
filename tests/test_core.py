@@ -34,6 +34,8 @@ from xhs_workflow.packages import (
 )
 from xhs_workflow.publish import (
     build_publish_command,
+    normalize_image_order,
+    prepare_ordered_publish_images,
     prepare_publish_files,
     resolve_package_temp_dir,
     update_publish_status,
@@ -1063,6 +1065,48 @@ class PublishAutomationTests(unittest.TestCase):
                 "/tmp/image_2.jpg",
             ],
         )
+
+    def test_normalize_image_order_sorts_common_generated_filenames(self):
+        images = [
+            Path("/tmp/image_10.png"),
+            Path("/tmp/image_2.png"),
+            Path("/tmp/image_1.png"),
+        ]
+        chatgpt_images = [
+            Path("/tmp/ChatGPT Image Jul 8, 2026, 06_02_06 PM (3).png"),
+            Path("/tmp/ChatGPT Image Jul 8, 2026, 06_02_06 PM (1).png"),
+            Path("/tmp/ChatGPT Image Jul 8, 2026, 06_02_06 PM (2).png"),
+        ]
+        archive_images = [
+            Path("/tmp/03_daily_habits.png"),
+            Path("/tmp/01_cover.png"),
+            Path("/tmp/02_avoid_habits.png"),
+        ]
+
+        self.assertEqual([path.name for path in normalize_image_order(images)], ["image_1.png", "image_2.png", "image_10.png"])
+        self.assertEqual(
+            [path.name for path in normalize_image_order(chatgpt_images)],
+            [
+                "ChatGPT Image Jul 8, 2026, 06_02_06 PM (1).png",
+                "ChatGPT Image Jul 8, 2026, 06_02_06 PM (2).png",
+                "ChatGPT Image Jul 8, 2026, 06_02_06 PM (3).png",
+            ],
+        )
+        self.assertEqual([path.name for path in normalize_image_order(archive_images)], ["01_cover.png", "02_avoid_habits.png", "03_daily_habits.png"])
+
+    def test_prepare_ordered_publish_images_copies_numbered_upload_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            image_2 = root / "image_2.png"
+            image_1 = root / "image_1.png"
+            image_2.write_bytes(b"second")
+            image_1.write_bytes(b"first")
+
+            prepared = prepare_ordered_publish_images([image_2, image_1], root / "publish-temp")
+
+            self.assertEqual([path.name for path in prepared], ["01_image_1.png", "02_image_2.png"])
+            self.assertEqual(prepared[0].read_bytes(), b"first")
+            self.assertEqual(prepared[1].read_bytes(), b"second")
 
     def test_update_publish_status_records_success_without_losing_package_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
