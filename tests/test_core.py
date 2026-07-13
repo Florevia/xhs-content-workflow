@@ -775,6 +775,27 @@ class ImageAutomationTests(unittest.TestCase):
         self.assertTrue(sleep_calls)
         self.assertGreaterEqual(sleep_calls[0], 120)
 
+    def test_generate_all_images_rejects_multiple_batches(self):
+        module_path = Path("/Users/lilin/.claude/skills/lilin-rednote/scripts/chatgpt_automation.py")
+        spec = importlib.util.spec_from_file_location("chatgpt_automation_test_module", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+
+        automator = module.ChatGPTAutomator.__new__(module.ChatGPTAutomator)
+        calls: list[dict] = []
+        automator.generate_batch = lambda batch: calls.append(batch) or [Path("/tmp/image_1.png")]
+
+        result = automator.generate_all_images(
+            [
+                {"batch_index": 1, "start_index": 1, "count": 1, "prompt": "第1张"},
+                {"batch_index": 2, "start_index": 2, "count": 1, "prompt": "第2张"},
+            ]
+        )
+
+        self.assertEqual(result, [])
+        self.assertEqual(calls, [])
+
     def test_chunk_prompts_splits_batches_by_max_size(self):
         batches = chunk_prompts([f"提示词{i}" for i in range(1, 11)], max_batch=8)
 
@@ -813,7 +834,7 @@ class ImageAutomationTests(unittest.TestCase):
         self.assertNotIn("Thinking", prompt)
         self.assertNotIn("一次性生成以下全部", prompt)
 
-    def test_write_chatgpt_batches_writes_grouped_batch_payload(self):
+    def test_write_chatgpt_batches_writes_single_grouped_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "batches.json"
             output_path = write_chatgpt_batches(
@@ -822,22 +843,18 @@ class ImageAutomationTests(unittest.TestCase):
             )
             data = json.loads(output_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["batch_index"], 1)
         self.assertEqual(data[0]["start_index"], 1)
-        self.assertEqual(data[0]["end_index"], 8)
-        self.assertEqual(data[0]["count"], 8)
-        self.assertEqual(data[1]["batch_index"], 2)
-        self.assertEqual(data[1]["start_index"], 9)
-        self.assertEqual(data[1]["end_index"], 9)
-        self.assertEqual(data[1]["count"], 1)
+        self.assertEqual(data[0]["end_index"], 9)
+        self.assertEqual(data[0]["count"], 9)
         self.assertNotIn("Thinking", data[0]["prompt"])
         self.assertNotIn("一次性生成以下全部", data[0]["prompt"])
         self.assertIn("不要模拟社交媒体帖子界面", data[0]["prompt"])
         self.assertEqual(data[0]["prompt"].count("不要模拟社交媒体帖子界面"), 1)
         self.assertIn("第1张图片提示词", data[0]["prompt"])
         self.assertIn("第8张图片提示词", data[0]["prompt"])
-        self.assertIn("第9张图片提示词", data[1]["prompt"])
+        self.assertIn("第9张图片提示词", data[0]["prompt"])
 
     def test_write_chatgpt_batches_appends_global_constraints_once_per_batch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -922,36 +939,7 @@ class ImageAutomationTests(unittest.TestCase):
         self.assertNotIn("Thinking", batch_payload[0]["prompt"])
         self.assertNotIn("一次性生成以下全部", batch_payload[0]["prompt"])
 
-    def test_generate_images_retries_once_after_transient_zero_image_failure(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            output_dir = root / "images"
-            output_dir.mkdir()
-            image_path = output_dir / "image_1.png"
-            image_path.write_bytes(b"distinct image bytes")
-            prompts_path = root / "batches.json"
-            failed_result = SimpleNamespace(stdout="", stderr="", returncode=0)
-            success_result = SimpleNamespace(
-                stdout=json.dumps([str(image_path)], ensure_ascii=False),
-                stderr="",
-                returncode=0,
-            )
-
-            with patch(
-                "xhs_workflow.images.subprocess.run",
-                side_effect=[failed_result, success_result],
-            ) as run_mock:
-                result = generate_images(
-                    ["第1张/共1张，封面图，测试提示词"],
-                    output_dir=output_dir,
-                    prompts_path=prompts_path,
-                    script_path=Path("/opt/chatgpt_automation.py"),
-                )
-
-        self.assertEqual(result, [image_path])
-        self.assertEqual(run_mock.call_count, 2)
-
-    def test_generate_images_raises_after_exhausting_retries(self):
+    def test_generate_images_does_not_retry_after_zero_image_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             output_dir = root / "images"
@@ -961,7 +949,7 @@ class ImageAutomationTests(unittest.TestCase):
 
             with patch(
                 "xhs_workflow.images.subprocess.run",
-                side_effect=[failed_result, failed_result],
+                return_value=failed_result,
             ) as run_mock:
                 with self.assertRaises(RuntimeError):
                     generate_images(
@@ -971,7 +959,23 @@ class ImageAutomationTests(unittest.TestCase):
                         script_path=Path("/opt/chatgpt_automation.py"),
                     )
 
-        self.assertEqual(run_mock.call_count, 2)
+        self.assertEqual(run_mock.call_count, 1)
+
+    def test_generate_images_rejects_automatic_retries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "images"
+            output_dir.mkdir()
+            prompts_path = root / "batches.json"
+
+            with self.assertRaisesRegex(ValueError, "禁止自动重试"):
+                generate_images(
+                    ["第1张/共1张，封面图，测试提示词"],
+                    output_dir=output_dir,
+                    prompts_path=prompts_path,
+                    script_path=Path("/opt/chatgpt_automation.py"),
+                    retries=1,
+                )
 
     def test_resolve_daily_image_dir_uses_month_day_and_package_name(self):
         from datetime import date

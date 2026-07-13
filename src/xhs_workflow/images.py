@@ -19,7 +19,7 @@ DEFAULT_XHS_SKILLS_SCRIPTS_DIR = Path("/Users/lilin/.claude/skills/xiaohongshu-s
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PUBLISHED_IMAGES_ROOT = PROJECT_ROOT / "output" / "published_images"
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
-MAX_IMAGES_PER_BATCH = 8
+MAX_IMAGES_PER_BATCH = 10_000
 # Gemini 看到「小红书风格」时容易误生成帖子底部 UI（点赞栏、假账号名等），统一追加负向约束
 FORBIDDEN_SOCIAL_UI_MARKER = "不要模拟社交媒体帖子界面"
 FORBIDDEN_SOCIAL_UI_CONSTRAINTS = (
@@ -111,9 +111,7 @@ def build_chatgpt_command(
     return command
 
 
-# ChatGPT 网页自动化偶发首次发送后检测不到图片（页面渲染较慢/首次打开标签页），
-# 这是已知瞬时故障（见 AGENTS.md 错误修复记录 2026-07-08），因此默认重试一次再判定失败。
-DEFAULT_GENERATE_RETRIES = 1
+DEFAULT_GENERATE_RETRIES = 0
 
 
 def generate_images(
@@ -125,20 +123,13 @@ def generate_images(
 ) -> list[Path]:
     """Generate images through the ChatGPT automation script and return image paths.
 
-    Retries the whole ChatGPT batch once (by default) on transient "0 images
-    returned" failures before raising, since a single flaky attempt should not
-    fail the entire publish flow.
+    Sends the prompt file once only. Retrying this subprocess opens a fresh
+    ChatGPT page and creates duplicate conversations, so callers must inspect
+    failures manually instead of automatically re-sending the task.
     """
-    attempts = max(1, retries + 1)
-    last_error: Exception | None = None
-    for attempt in range(1, attempts + 1):
-        try:
-            return _generate_images_once(prompts, output_dir=output_dir, prompts_path=prompts_path, script_path=script_path)
-        except RuntimeError as error:
-            last_error = error
-            if attempt >= attempts:
-                raise
-    raise last_error or RuntimeError("ChatGPT image generation failed")
+    if retries:
+        raise ValueError("ChatGPT 生图禁止自动重试；失败后请人工确认会话状态再重新运行")
+    return _generate_images_once(prompts, output_dir=output_dir, prompts_path=prompts_path, script_path=script_path)
 
 
 def _generate_images_once(
