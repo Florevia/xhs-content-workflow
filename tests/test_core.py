@@ -11,10 +11,21 @@ from unittest.mock import patch
 from xhs_workflow.automation import ReviewRejected, auto_publish_package
 from xhs_workflow.claude_client import extract_json_object
 from xhs_workflow.draft_package import DraftValidationError, create_package_from_draft
-from xhs_workflow.generate import build_generation_prompt, finalize_generation_result
+from xhs_workflow.generate import (
+    build_generation_prompt,
+    finalize_generation_result,
+    generate_publish_packages,
+)
 from xhs_workflow.image_prompt_profiles import (
     build_image_prompts,
     resolve_image_profile_name,
+)
+from xhs_workflow.research import (
+    ResearchError,
+    build_research_prompt,
+    format_research_brief_for_prompt,
+    research_topic,
+    validate_research_brief,
 )
 from xhs_workflow.images import (
     build_chatgpt_command,
@@ -56,6 +67,19 @@ class PromptTests(unittest.TestCase):
         self.assertIn("必须竖版 3:4", template)
         self.assertIn("1000 字", template)
         self.assertIn("mechanism_explainer", template)
+        self.assertIn("{research_brief}", template)
+        self.assertIn("事实锚点", template)
+        self.assertIn("外部观点", template)
+
+    def test_checked_in_research_template_requires_web_search_and_brief_shape(self):
+        template_path = Path(__file__).resolve().parents[1] / "prompts" / "research_note.md"
+        template = template_path.read_text(encoding="utf-8")
+
+        self.assertIn("必须联网搜索", template)
+        self.assertIn("禁止编造", template)
+        self.assertIn('"facts"', template)
+        self.assertIn('"viewpoints"', template)
+        self.assertIn("{topic}", template)
 
     def test_render_prompt_replaces_named_placeholders_without_touching_json_braces(self):
         template = """账号：{brand_guide}
@@ -87,7 +111,8 @@ class PromptTests(unittest.TestCase):
             (root / "docs" / "content_pillars.md").write_text("内容栏目", encoding="utf-8")
             (root / "docs" / "compliance_rules.md").write_text("合规规则", encoding="utf-8")
             (root / "prompts" / "generate_note.md").write_text(
-                "品牌：{brand_guide}\n栏目：{content_pillars}\n规则：{compliance_rules}\n选题：{topic}",
+                "品牌：{brand_guide}\n栏目：{content_pillars}\n规则：{compliance_rules}\n"
+                "选题：{topic}\n资料：{research_brief}",
                 encoding="utf-8",
             )
 
@@ -99,12 +124,22 @@ class PromptTests(unittest.TestCase):
                     "audience": "租房女生",
                     "angle": "避坑",
                 },
+                research_brief={
+                    "query_summary": "咖啡机避坑",
+                    "as_of": "2026-07-14",
+                    "facts": [{"claim": "公开测评提到预算优先看使用频率", "source_name": "媒体", "source_url": "https://example.com", "confidence": "medium"}],
+                    "viewpoints": [],
+                    "gaps": [],
+                    "risk_notes": [],
+                },
             )
 
         self.assertIn("品牌：账号定位", prompt)
         self.assertIn("栏目：内容栏目", prompt)
         self.assertIn("规则：合规规则", prompt)
         self.assertIn("选题：咖啡机选择", prompt)
+        self.assertIn("咖啡机避坑", prompt)
+        self.assertIn("预算优先看使用频率", prompt)
 
     def test_build_generation_prompt_requests_profile_instead_of_final_image_prompts(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,6 +261,49 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(data["recommended_title"], "第一台咖啡机别乱买")
         self.assertEqual(data["publish_status"], "draft")
         self.assertEqual(data["image_prompts"], ["竖版封面，咖啡机和大字标题", "咖啡机类型对比信息图"])
+        self.assertNotIn("## 联网资料摘要", markdown)
+
+    def test_write_publish_package_includes_research_brief_summary_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            package = PublishPackage(
+                topic_id="001",
+                topic="AI很火却赚不到钱",
+                category="生活方式",
+                audience="普通人",
+                angle="社会趋势",
+                titles=["AI很火却赚不到钱"],
+                recommended_title="AI很火却赚不到钱",
+                cover_texts=["刷屏≠赚钱"],
+                body="正文",
+                hashtags=["AI工具"],
+                image_suggestions=["封面", "内容"],
+                image_profile="business_infographic",
+                image_prompts=["封面提示词"],
+                image_paths=[],
+                publish_time_suggestion="晚间",
+                compliance_check={"risk_level": "low", "risks": [], "rewrite_suggestions": []},
+                raw={
+                    "research_brief": {
+                        "query_summary": "AI产品商业化亏损原因",
+                        "as_of": "2026-07-14",
+                        "facts": [{"claim": "a"}, {"claim": "b"}],
+                        "viewpoints": [{"summary": "v1"}],
+                        "gaps": [],
+                        "risk_notes": [],
+                    }
+                },
+            )
+
+            markdown_path = write_publish_package(package, output_dir)
+            markdown = markdown_path.read_text(encoding="utf-8")
+            data = json.loads(markdown_path.with_suffix(".json").read_text(encoding="utf-8"))
+
+        self.assertIn("## 联网资料摘要", markdown)
+        self.assertIn("AI产品商业化亏损原因", markdown)
+        self.assertIn("事实锚点：2 条", markdown)
+        self.assertIn("外部观点：1 条", markdown)
+        self.assertEqual(data["research_brief"]["query_summary"], "AI产品商业化亏损原因")
 
     def test_extract_package_fields_returns_copy_ready_content(self):
         markdown = """# 发布包：咖啡机选择
@@ -492,6 +570,43 @@ class DraftPackageTests(unittest.TestCase):
         self.assertEqual(data["recommended_title"], "第一台咖啡机别乱买")
         self.assertEqual(data["image_prompts"], ["封面图提示词", "内容图提示词"])
         self.assertEqual(data["publish_status"], "draft")
+        self.assertIn("未联网核验", data["compliance_check"].get("risks", []))
+
+    def test_create_package_from_draft_preserves_research_brief(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            draft_path = root / "draft.json"
+            output_dir = root / "output"
+            brief = {
+                "query_summary": "手写资料",
+                "as_of": "2026-07-14",
+                "facts": [{"claim": "公开说法", "source_name": "官网", "source_url": "https://example.com", "confidence": "high"}],
+                "viewpoints": [{"summary": "有人认为节奏放缓", "stance": "neutral", "source_name": "社区讨论", "source_url": "https://example.com/v", "confidence": "medium"}],
+                "gaps": [],
+                "risk_notes": [],
+            }
+            draft_path.write_text(
+                json.dumps(
+                    {
+                        "topic_id": "manual-research-001",
+                        "topic": "新手如何选择第一台咖啡机",
+                        "recommended_title": "第一台咖啡机别乱买",
+                        "body": "正文",
+                        "hashtags": ["咖啡机"],
+                        "image_prompts": ["封面图提示词"],
+                        "research_brief": brief,
+                        "compliance_check": {"risk_level": "manual", "risks": [], "rewrite_suggestions": []},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            markdown_path = create_package_from_draft(draft_path, output_dir)
+            data = json.loads(markdown_path.with_suffix(".json").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["research_brief"], brief)
+        self.assertNotIn("未联网核验", data["compliance_check"].get("risks", []))
 
     def test_create_package_from_draft_generates_image_prompts_from_profile_when_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -699,6 +814,212 @@ class GenerationResultTests(unittest.TestCase):
             )
 
         self.assertEqual(result["image_prompts"], ["手写封面", "手写内容"])
+
+    def test_finalize_generation_result_attaches_research_brief(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            brief = {
+                "query_summary": "测试",
+                "as_of": "2026-07-14",
+                "facts": [],
+                "viewpoints": [],
+                "gaps": ["不足"],
+                "risk_notes": [],
+            }
+            result = finalize_generation_result(
+                root,
+                {"id": "001", "topic": "t", "category": "c", "audience": "a", "angle": "g"},
+                {
+                    "recommended_title": "标题",
+                    "cover_texts": ["封面"],
+                    "body": "正文",
+                    "hashtags": ["标签"],
+                    "image_prompts": ["手写"],
+                },
+                research_brief=brief,
+            )
+
+        self.assertEqual(result["research_brief"], brief)
+
+    def test_finalize_generation_result_notes_skipped_research(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.dict(os.environ, {"XHS_SKIP_RESEARCH": "1"}):
+                result = finalize_generation_result(
+                    root,
+                    {"id": "001", "topic": "t", "category": "c", "audience": "a", "angle": "g"},
+                    {
+                        "recommended_title": "标题",
+                        "cover_texts": ["封面"],
+                        "body": "正文",
+                        "hashtags": ["标签"],
+                        "image_prompts": ["手写"],
+                        "compliance_check": {"risk_level": "low", "risks": [], "rewrite_suggestions": []},
+                    },
+                    research_brief=None,
+                )
+
+        self.assertNotIn("research_brief", result)
+        self.assertIn("已跳过联网检索(XHS_SKIP_RESEARCH)", result["compliance_check"]["risks"])
+
+    def test_generate_publish_packages_researches_before_generating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "data").mkdir()
+            (root / "docs").mkdir()
+            (root / "prompts").mkdir()
+            (root / "config").mkdir()
+            (root / "output" / "publish_packages").mkdir(parents=True)
+            (root / "docs" / "brand_guide.md").write_text("账号", encoding="utf-8")
+            (root / "docs" / "content_pillars.md").write_text("栏目", encoding="utf-8")
+            (root / "docs" / "compliance_rules.md").write_text("合规", encoding="utf-8")
+            (root / "prompts" / "generate_note.md").write_text(
+                "选题：{topic}\n资料：{research_brief}",
+                encoding="utf-8",
+            )
+            (root / "prompts" / "research_note.md").write_text("选题：{topic}", encoding="utf-8")
+            with (root / "data" / "topics.csv").open("w", encoding="utf-8", newline="") as file:
+                writer = csv.DictWriter(
+                    file,
+                    fieldnames=["id", "topic", "category", "audience", "angle", "status"],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "id": "001",
+                        "topic": "咖啡机选择",
+                        "category": "家居生活",
+                        "audience": "租房女生",
+                        "angle": "避坑",
+                        "status": "draft",
+                    }
+                )
+
+            brief = {
+                "query_summary": "咖啡机",
+                "as_of": "2026-07-14",
+                "facts": [{"claim": "f1", "source_name": "s", "source_url": "https://e.com", "confidence": "high"}],
+                "viewpoints": [{"summary": "v1", "stance": "neutral", "source_name": "讨论", "source_url": "https://e.com/v", "confidence": "medium"}],
+                "gaps": [],
+                "risk_notes": [],
+            }
+            fake_result = {
+                "titles": ["标题"],
+                "recommended_title": "标题",
+                "cover_texts": ["封面"],
+                "body": "正文",
+                "hashtags": ["标签"],
+                "image_suggestions": ["封面图", "内容图", "结尾图"],
+                "image_profile": "decision_checklist",
+                "image_prompts": ["p1", "p2", "p3"],
+                "publish_time_suggestion": "晚间",
+                "compliance_check": {"risk_level": "low", "risks": [], "rewrite_suggestions": []},
+            }
+            call_order: list[str] = []
+            assert_prompt = self.assertIn
+
+            class FakeClient:
+                def complete_json(self, prompt, system, max_tokens=4000):
+                    call_order.append("generate")
+                    assert_prompt("咖啡机", prompt)
+                    return dict(fake_result)
+
+            fake_client = FakeClient()
+
+            def fake_research(root_arg, topic, client=None):
+                call_order.append("research")
+                self.assertEqual(topic.topic, "咖啡机选择")
+                return brief
+
+            with patch("xhs_workflow.generate.ClaudeClient", return_value=fake_client):
+                with patch("xhs_workflow.generate.research_topic", side_effect=fake_research):
+                    paths = generate_publish_packages(root, status="draft")
+
+            data = json.loads(paths[0].with_suffix(".json").read_text(encoding="utf-8"))
+
+        self.assertEqual(call_order, ["research", "generate"])
+        self.assertEqual(data["research_brief"], brief)
+
+
+class ResearchTests(unittest.TestCase):
+    def test_validate_research_brief_requires_facts_and_viewpoints_keys(self):
+        with self.assertRaises(ResearchError):
+            validate_research_brief({"query_summary": "x"})
+
+    def test_validate_research_brief_normalizes_lists(self):
+        brief = validate_research_brief(
+            {
+                "query_summary": "意图",
+                "as_of": "2026-07-14",
+                "facts": [{"claim": "事实", "source_name": "官网", "source_url": "https://a.com", "confidence": "high"}],
+                "viewpoints": "不是列表",
+                "gaps": None,
+                "risk_notes": ["注意合规"],
+            }
+        )
+
+        self.assertEqual(brief["query_summary"], "意图")
+        self.assertEqual(len(brief["facts"]), 1)
+        self.assertEqual(brief["viewpoints"], [])
+        self.assertEqual(brief["gaps"], [])
+        self.assertEqual(brief["risk_notes"], ["注意合规"])
+
+    def test_format_research_brief_for_prompt_is_json_text(self):
+        text = format_research_brief_for_prompt(
+            {
+                "query_summary": "意图",
+                "as_of": "2026-07-14",
+                "facts": [],
+                "viewpoints": [],
+                "gaps": [],
+                "risk_notes": [],
+            }
+        )
+        self.assertIn('"query_summary": "意图"', text)
+
+    def test_build_research_prompt_includes_topic_and_template(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "research_note.md").write_text(
+                "请检索：{topic}\n分类：{category}\n受众：{audience}\n角度：{angle}",
+                encoding="utf-8",
+            )
+            prompt = build_research_prompt(
+                root,
+                {
+                    "topic": "港股打新",
+                    "category": "投资",
+                    "audience": "新手",
+                    "angle": "教程",
+                },
+            )
+
+        self.assertIn("请检索：港股打新", prompt)
+        self.assertIn("分类：投资", prompt)
+
+    def test_research_topic_skips_when_env_set(self):
+        with patch.dict(os.environ, {"XHS_SKIP_RESEARCH": "1"}):
+            result = research_topic(Path("/tmp"), {"topic": "x", "category": "c", "audience": "a", "angle": "g"})
+        self.assertIsNone(result)
+
+    def test_research_topic_raises_research_error_on_invalid_payload(self):
+        class FakeClient:
+            def complete_json_with_web_search(self, prompt, system, max_tokens=4000, max_uses=None):
+                return {"query_summary": "缺字段"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "prompts").mkdir()
+            (root / "prompts" / "research_note.md").write_text("选题：{topic}", encoding="utf-8")
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("XHS_SKIP_RESEARCH", None)
+                with self.assertRaises(ResearchError):
+                    research_topic(
+                        root,
+                        {"topic": "x", "category": "c", "audience": "a", "angle": "g"},
+                        client=FakeClient(),
+                    )
 
 
 class ImageAutomationTests(unittest.TestCase):

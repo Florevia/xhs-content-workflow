@@ -120,6 +120,7 @@ def render_package_markdown(package: PublishPackage) -> str:
     risk_level = compliance.get("risk_level", "unknown")
     risks = _format_list(compliance.get("risks", []))
     rewrite_suggestions = _format_list(compliance.get("rewrite_suggestions", []))
+    research_section = _render_research_summary(package.raw.get("research_brief") if package.raw else None)
 
     return f"""# 发布包：{package.topic}
 
@@ -128,7 +129,7 @@ def render_package_markdown(package: PublishPackage) -> str:
 - 分类: {package.category}
 - 目标用户: {package.audience}
 - 角度: {package.angle}
-
+{research_section}
 ## 推荐标题
 {package.recommended_title}
 
@@ -168,6 +169,22 @@ def render_package_markdown(package: PublishPackage) -> str:
 - 发布日期：
 - 小红书链接：
 - 备注：
+"""
+
+
+def _render_research_summary(brief: Any) -> str:
+    """Render a short research summary section when a brief is present."""
+    if not isinstance(brief, dict):
+        return ""
+    query = str(brief.get("query_summary") or "").strip() or "（未填写）"
+    facts = brief.get("facts") if isinstance(brief.get("facts"), list) else []
+    viewpoints = brief.get("viewpoints") if isinstance(brief.get("viewpoints"), list) else []
+    return f"""
+## 联网资料摘要
+- 检索意图：{query}
+- 事实锚点：{len(facts)} 条
+- 外部观点：{len(viewpoints)} 条
+
 """
 
 

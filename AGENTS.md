@@ -69,6 +69,7 @@ workflow/
 │       ├── prompts.py             # 模板渲染（render_prompt / read_text）
 │       ├── claude_client.py       # Anthropic API 封装 + .env 加载 + JSON 提取
 │       ├── generate.py            # 组装生成 Prompt、调用 Claude、落地生成结果
+│       ├── research.py            # 生成前 Claude web search → research_brief
 │       ├── image_prompt_profiles.py # 图片模板匹配与 prompt 拼装（config/image_prompt_profiles.json 消费者）
 │       ├── images.py              # 生图批次拆分、调用外部 chatgpt_automation.py、结果校验
 │       ├── draft_package.py       # 无 API 模式：草稿 JSON 校验 + 转发布包
@@ -231,6 +232,7 @@ PYTHONPATH=src python3 src/generate_note.py            # 会真实消耗 ANTHROP
    - **定位原因**：排查并明确导致错误的根本原因（如脚本参数错误、依赖缺失、路径不对、合规审查遗漏、发布接口调用方式错误等），禁止只做"绕过式"修复。
    - **修复问题**：先修复本次任务中的实际问题，确保当前流程能够正常跑通。
    - **验证**：修复后重新执行一次相关步骤（或等效的最小验证），确认问题已解决，再继续后续流程。
+9. **联网调研规则**：通过 API 生成笔记（`generate_note.py` / `generate_publish_packages`）前，必须先用 Claude web search 产出 `research_brief`（事实锚点 + 外部观点），并写入发布包 / 归档的 `content.json`；内容图规划须吸收 brief，禁止空洞框架金句。无 API 草稿路径可选手写 `research_brief`，缺失时在合规中标注「未联网核验」。仅当显式设置 `XHS_SKIP_RESEARCH=1` 时可跳过检索。
 
 ## 示例归档结构
 

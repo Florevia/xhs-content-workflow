@@ -68,7 +68,51 @@ class ClaudeClient:
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
-        return extract_json_object(message.content[0].text)
+        return extract_json_object(_message_text(message))
+
+    def complete_json_with_web_search(
+        self,
+        prompt: str,
+        system: str,
+        max_tokens: int = 4000,
+        max_uses: int | None = None,
+    ) -> dict[str, Any]:
+        """Complete a JSON response with Anthropic web_search enabled."""
+        uses = max_uses
+        if uses is None:
+            raw = os.getenv("CLAUDE_WEB_SEARCH_MAX_USES", "5").strip()
+            uses = int(raw) if raw else 5
+
+        message = self._client.messages.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            tools=[
+                {
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": uses,
+                    "allowed_callers": ["direct"],
+                }
+            ],
+        )
+        return extract_json_object(_message_text(message))
+
+
+def _message_text(message: Any) -> str:
+    """Join all text blocks from a Messages API response."""
+    chunks: list[str] = []
+    for block in getattr(message, "content", []) or []:
+        if getattr(block, "type", None) == "text":
+            chunks.append(getattr(block, "text", "") or "")
+        elif isinstance(block, dict) and block.get("type") == "text":
+            chunks.append(str(block.get("text") or ""))
+    if chunks:
+        return "".join(chunks)
+    # Fallback for simple mock objects used in older tests.
+    first = message.content[0]
+    return first.text if hasattr(first, "text") else str(first)
 
 
 def _strip_markdown_fence(text: str) -> str:
